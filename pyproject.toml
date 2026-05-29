@@ -1,0 +1,24 @@
+[project]
+name = "discipline-mcp"
+version = "0.1.0"
+description = "Local single-user MCP server: a protected, schema-strict, auditable investment-discipline store (event-sourced append-only JSONL with a hash chain)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+]
+
+[project.scripts]
+discipline-mcp = "discipline_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/discipline_mcp"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
