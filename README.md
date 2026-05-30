@@ -2,7 +2,9 @@
 
 Local single-user MCP server: a **protected, schema-strict, auditable** store for
 per-symbol investment discipline (intrinsic-value ranges, add/trim/stop/clear
-price thresholds, tranches, fundamental hard-triggers, target position, status).
+price thresholds, tranches, fundamental hard-triggers, target position, status)
+plus a value-investing deep-dive layer (moat, stock type, value-trap flag,
+dividend sustainability, catalysts, tracking metrics, conviction, evidence).
 
 Event-sourced: every change appends one immutable event to an append-only JSONL
 log carrying a **hash chain**; current rules are derived by **replay**. No
@@ -36,6 +38,32 @@ Write (confirm-gated): `set_rule`, `set_rule_bulk`, `lock_rule`, `unlock_rule`,
 
 It does NOT store prices/holdings — combine with the `ashare` (quotes/financials)
 and `portfolio` (positions/cost) MCP servers at the conversation layer.
+
+## Value-investing deep-dive fields
+Informational, additive fields (no new hard rules, none locked by default). Set
+them via the same `set_rule` / `set_rule_bulk` tools.
+
+| field | type | values / shape |
+|---|---|---|
+| `stock_type` | enum | `CYCLICAL` `GROWTH` `QUALITY` `VALUE` `VALUE_TRAP` `SPECIAL_SITUATION` `DEFENSIVE` |
+| `moat` | str | free text — source(s) of the competitive moat |
+| `moat_rating` | enum | `WIDE` `NARROW` `NONE` |
+| `normalized_eps` | price | normalized / mid-cycle EPS (元/股, ≥0) |
+| `normalized_basis` | str | how normalized_eps was derived |
+| `earnings_quality` | str | cash conversion / accruals notes |
+| `value_trap` | enum | `YES` `NO` `WATCH` |
+| `cheap_reason` | str | why the market prices it cheaply |
+| `dividend_yield` | pct | 0..100 |
+| `dividend_sustainable` | enum | `YES` `NO` `RISK` |
+| `catalysts` | json | `[{event (required), date?, note?}]` |
+| `tracking_metrics` | json | `[{metric (required), threshold (required, str), note?}]` |
+| `confidence` | enum | `LOW` `MED` `HIGH` |
+| `disagreement` | str | bear case / where you might be wrong |
+| `evidence` | str | supporting evidence for the thesis |
+| `vs_portfolio` | str | role vs the rest of the portfolio |
+
+Enum matching is case-sensitive/exact. For the new enums, setting `None` clears
+the field; `status` keeps its existing strictness (no `None`).
 
 ## Run
 ```

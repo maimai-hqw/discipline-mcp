@@ -106,6 +106,29 @@
 
 > **单位约定**:价格阈值一律"元/股";tranche 动作量用"股数"(实操单位);仓位约束用"占组合%"。三者不混。
 
+### 3.1 价值投资深挖字段(信息性、纯增量)
+
+下列 16 个字段为**信息性/增量**:**不新增任何跨字段硬规则**(`validate_rule` 不变),**默认均不锁定**(只有 `stop_loss`/`clear_line` 默认锁)。走同一套 `set_rule`/`set_rule_bulk` 工具录入。数值字段同样过 `_num`(拒 NaN/Inf);enum 严格区分大小写、精确匹配;新 enum 传 `None` = 清空该字段(`status` 仍不可为 `None`)。
+
+| 字段 | 类型 | 取值 / 结构 | 说明 |
+|---|---|---|---|
+| stock_type | enum | CYCLICAL/GROWTH/QUALITY/VALUE/VALUE_TRAP/SPECIAL_SITUATION/DEFENSIVE | 标的类型定性 |
+| moat | str | — | 护城河来源(自由文本) |
+| moat_rating | enum | WIDE/NARROW/NONE | 护城河宽度 |
+| normalized_eps | price | 元/股,≥0 | 正常化/周期中枢 EPS |
+| normalized_basis | str | — | normalized_eps 的推导依据 |
+| earnings_quality | str | — | 盈利质量(现金转化/应计)备注 |
+| value_trap | enum | YES/NO/WATCH | 是否价值陷阱 |
+| cheap_reason | str | — | 市场为何给低估值 |
+| dividend_yield | pct | 0..100 | 股息率 |
+| dividend_sustainable | enum | YES/NO/RISK | 分红可持续性 |
+| catalysts[] | json | `[{event(必填), date?, note?}]` | 催化剂清单;date/note 默认 "" |
+| tracking_metrics[] | json | `[{metric(必填), threshold(必填,str), note?}]` | 跟踪指标;threshold 强制转 str(如 "≥1.2%") |
+| confidence | enum | LOW/MED/HIGH | 信心/确信度 |
+| disagreement | str | — | 反方观点 / 可能错在哪 |
+| evidence | str | — | 支撑论点的证据 |
+| vs_portfolio | str | — | 相对组合其余持仓的角色 |
+
 ---
 
 ## 4. 校验规则(写入时,pydantic)
