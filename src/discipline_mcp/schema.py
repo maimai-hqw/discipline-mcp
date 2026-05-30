@@ -130,7 +130,12 @@ def coerce_value(field: str, value):
             raise ValidationError(f"{field} 是百分比,不能 >100:{value}")
 
     elif t == "enum":
-        allowed = ENUM_VALUES.get(field, STATUSES)
+        # Fail CLOSED: an enum field with no ENUM_VALUES entry is a config bug, not
+        # a license to fall back to STATUSES (which would let status-like values
+        # persist under the wrong field). Refuse rather than guess.
+        allowed = ENUM_VALUES.get(field)
+        if allowed is None:
+            raise ValidationError(f"{field} 是 enum 但缺少 ENUM_VALUES 配置(内部错误)")
         # status must stay a valid lifecycle value (None still raises); the new
         # optional enums allow None to CLEAR the field.
         if value is None and field != "status":

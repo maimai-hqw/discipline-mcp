@@ -37,6 +37,15 @@ def test_new_enum_none_clears(field):
     assert schema.coerce_value(field, None) is None
 
 
+def test_every_enum_field_has_value_set():
+    # Fail-closed guard: every FIELD_TYPES enum field MUST have an ENUM_VALUES
+    # entry, so coerce_value can never silently fall back to STATUSES for a
+    # misconfigured field.
+    enum_fields = {f for f, t in schema.FIELD_TYPES.items() if t == "enum"}
+    missing = enum_fields - set(schema.ENUM_VALUES)
+    assert not missing, f"enum 字段缺少 ENUM_VALUES 配置:{sorted(missing)}"
+
+
 def test_new_enum_case_sensitive_exact_match():
     # consistent with the existing status enum: no auto-uppercasing
     with pytest.raises(ValidationError):
