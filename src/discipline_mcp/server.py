@@ -65,6 +65,12 @@ def _fmt_rule(rule: dict) -> str:
         "add_zone_high", "add_tranches", "no_chase_above",
         "trim_zone_low", "trim_tranches", "stop_loss", "clear_line",
         "hard_triggers", "target_position_pct", "max_position_pct",
+        # --- value-investing deep-dive informational fields ---
+        "stock_type", "moat", "moat_rating",
+        "normalized_eps", "normalized_basis", "earnings_quality",
+        "value_trap", "cheap_reason", "dividend_yield", "dividend_sustainable",
+        "catalysts", "tracking_metrics",
+        "confidence", "disagreement", "evidence", "vs_portfolio",
         "locked_fields", "updated_at",
     ]
     lines = []
