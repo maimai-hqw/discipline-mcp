@@ -19,7 +19,8 @@ STATUSES = {"HOLD", "BUILDING", "TRIMMING", "EXITING", "WATCH", "RETIRED"}
 LIFECYCLE_STATUSES = {"RETIRED"}
 _SYMBOL_RE = re.compile(r"^(sh|sz|bj)\.\d{6}$")
 
-# field -> ("price"|"pct"|"str"|"enum"|"json_tranches"|"json_triggers")
+# field -> ("price"|"pct"|"str"|"enum"|"json_tranches"|"json_triggers"
+#           |"json_catalysts"|"json_metrics")
 FIELD_TYPES = {
     "name": "str",
     "sector": "str",
@@ -38,6 +39,35 @@ FIELD_TYPES = {
     "hard_triggers": "json_triggers",
     "target_position_pct": "pct",
     "max_position_pct": "pct",
+    # --- value-investing deep-dive informational fields (additive, no new hard rules) ---
+    "stock_type": "enum",
+    "moat": "str",
+    "moat_rating": "enum",
+    "normalized_eps": "price",
+    "normalized_basis": "str",
+    "earnings_quality": "str",
+    "value_trap": "enum",
+    "cheap_reason": "str",
+    "dividend_yield": "pct",
+    "dividend_sustainable": "enum",
+    "catalysts": "json_catalysts",
+    "tracking_metrics": "json_metrics",
+    "confidence": "enum",
+    "disagreement": "str",
+    "evidence": "str",
+    "vs_portfolio": "str",
+}
+
+# Per-enum-field allowed value-sets. `status` keeps its existing strictness
+# (and its own None-rejection); the new enums allow None to CLEAR the field.
+ENUM_VALUES = {
+    "status": STATUSES,
+    "stock_type": {"CYCLICAL", "GROWTH", "QUALITY", "VALUE", "VALUE_TRAP",
+                   "SPECIAL_SITUATION", "DEFENSIVE"},
+    "moat_rating": {"WIDE", "NARROW", "NONE"},
+    "value_trap": {"YES", "NO", "WATCH"},
+    "dividend_sustainable": {"YES", "NO", "RISK"},
+    "confidence": {"LOW", "MED", "HIGH"},
 }
 
 class ValidationError(ValueError):
@@ -100,8 +130,13 @@ def coerce_value(field: str, value):
             raise ValidationError(f"{field} 是百分比,不能 >100:{value}")
 
     elif t == "enum":
-        if value not in STATUSES:
-            raise ValidationError(f"status 非法:{value!r},允许 {sorted(STATUSES)}")
+        allowed = ENUM_VALUES.get(field, STATUSES)
+        # status must stay a valid lifecycle value (None still raises); the new
+        # optional enums allow None to CLEAR the field.
+        if value is None and field != "status":
+            return None
+        if value not in allowed:
+            raise ValidationError(f"{field} 非法:{value!r},允许 {sorted(allowed)}")
 
     elif t == "str":
         if value is not None and not isinstance(value, str):
@@ -112,6 +147,12 @@ def coerce_value(field: str, value):
 
     elif t == "json_triggers":
         value = _coerce_triggers(field, value)
+
+    elif t == "json_catalysts":
+        value = _coerce_catalysts(field, value)
+
+    elif t == "json_metrics":
+        value = _coerce_tracking_metrics(field, value)
 
     return value
 
@@ -144,6 +185,42 @@ def _coerce_triggers(field, value):
             raise ValidationError(f"{field}[{i}] 需含 condition 和 action")
         out.append({"condition": str(item["condition"]), "action": str(item["action"]),
                     "note": item.get("note", "")})
+    return out
+
+
+def _coerce_catalysts(field, value):
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValidationError(f"{field} 必须是数组 [{{event, date, note}}]")
+    out = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValidationError(f"{field}[{i}] 必须是对象 {{event, date?, note?}}")
+        event = str(item.get("event", "")).strip()
+        if not event:
+            raise ValidationError(f"{field}[{i}] 需含非空 event")
+        out.append({"event": event,
+                    "date": str(item.get("date", "")),
+                    "note": str(item.get("note", ""))})
+    return out
+
+
+def _coerce_tracking_metrics(field, value):
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValidationError(f"{field} 必须是数组 [{{metric, threshold, note}}]")
+    out = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict) or "metric" not in item or "threshold" not in item:
+            raise ValidationError(f"{field}[{i}] 需含 metric 和 threshold")
+        metric = str(item["metric"]).strip()
+        if not metric:
+            raise ValidationError(f"{field}[{i}] 需含 metric 和 threshold")
+        out.append({"metric": metric,
+                    "threshold": str(item["threshold"]),
+                    "note": str(item.get("note", ""))})
     return out
 
 
