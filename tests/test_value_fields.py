@@ -239,3 +239,59 @@ def test_set_rule_single_new_enum_field_via_server(tmp_path, monkeypatch):
     # an invalid enum value is rejected at the tool surface
     bad = _run(server.set_rule("sh.600519", "moat_rating", "HUGE", "错值", confirm=True))
     assert "校验未通过" in bad
+
+
+# --------------------------------------------------------------------- #
+# source_docs — 证据链 provenance(art_code + 可选 sha256 内容哈希)
+# --------------------------------------------------------------------- #
+def test_source_docs_valid_coerces():
+    v = schema.coerce_value("source_docs", [
+        {"doc": "FY2025年报全文", "art_code": "AN202604241821549469",
+         "sha256": "A" * 64, "note": "扣非5.60亿/归母11.70亿=0.48"},
+        {"art_code": "AN202604291821741763"},   # 仅 art_code,无 doc
+        {"doc": "screen_market 2026-05-29"},     # 仅 doc,无 art_code
+    ])
+    assert v[0]["sha256"] == "a" * 64            # 统一小写
+    assert v[0]["art_code"] == "AN202604241821549469"
+    assert v[1]["doc"] == "" and v[1]["art_code"] == "AN202604291821741763"
+    assert v[2]["sha256"] == "" and v[2]["note"] == ""
+
+
+def test_source_docs_requires_doc_or_artcode():
+    with pytest.raises(ValidationError):
+        schema.coerce_value("source_docs", [{"note": "无出处条目"}])
+
+
+def test_source_docs_bad_sha256_rejected():
+    with pytest.raises(ValidationError):
+        schema.coerce_value("source_docs", [{"doc": "x", "sha256": "deadbeef"}])  # 非64位
+    with pytest.raises(ValidationError):
+        schema.coerce_value("source_docs", [{"doc": "x", "sha256": "g" * 64}])    # 非hex
+
+
+def test_source_docs_empty_sha_ok_and_none_clears():
+    v = schema.coerce_value("source_docs", [{"doc": "x", "sha256": ""}])
+    assert v[0]["sha256"] == ""
+    assert schema.coerce_value("source_docs", None) is None
+
+
+def test_source_docs_shape_errors():
+    with pytest.raises(ValidationError):
+        schema.coerce_value("source_docs", "notalist")
+    with pytest.raises(ValidationError):
+        schema.coerce_value("source_docs", ["notadict"])
+
+
+def test_source_docs_roundtrip_via_server(tmp_path, monkeypatch):
+    monkeypatch.setenv("DISCIPLINE_MCP_DB", str(f := tmp_path / "rules.jsonl"))
+    r = _run(server.set_rule_bulk("sh.600861", {
+        "source_docs": [{"doc": "FY2025年报", "art_code": "AN202604241821549469",
+                         "sha256": "b" * 64, "note": "扣非/归母0.48"}],
+    }, "证据链回溯", confirm=True))
+    assert "写入" in r
+    rule = store.replay(store.read_events(f))["sh.600861"]
+    assert rule["source_docs"][0]["art_code"] == "AN202604241821549469"
+    assert rule["source_docs"][0]["sha256"] == "b" * 64
+    assert "完整" in _run(server.verify_chain())
+    # source_docs 不被默认锁定
+    assert "source_docs" not in set(rule.get("locked_fields", []))

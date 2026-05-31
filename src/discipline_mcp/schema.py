@@ -20,7 +20,7 @@ LIFECYCLE_STATUSES = {"RETIRED"}
 _SYMBOL_RE = re.compile(r"^(sh|sz|bj)\.\d{6}$")
 
 # field -> ("price"|"pct"|"str"|"enum"|"json_tranches"|"json_triggers"
-#           |"json_catalysts"|"json_metrics")
+#           |"json_catalysts"|"json_metrics"|"json_source_docs")
 FIELD_TYPES = {
     "name": "str",
     "sector": "str",
@@ -56,6 +56,8 @@ FIELD_TYPES = {
     "disagreement": "str",
     "evidence": "str",
     "vs_portfolio": "str",
+    # 证据链:每条规则显式挂其依据的原始凭证(可程序化回溯),收紧防幻觉
+    "source_docs": "json_source_docs",
 }
 
 # Per-enum-field allowed value-sets. `status` keeps its existing strictness
@@ -159,6 +161,9 @@ def coerce_value(field: str, value):
     elif t == "json_metrics":
         value = _coerce_tracking_metrics(field, value)
 
+    elif t == "json_source_docs":
+        value = _coerce_source_docs(field, value)
+
     return value
 
 
@@ -225,6 +230,41 @@ def _coerce_tracking_metrics(field, value):
             raise ValidationError(f"{field}[{i}] 需含 metric 和 threshold")
         out.append({"metric": metric,
                     "threshold": str(item["threshold"]),
+                    "note": str(item.get("note", ""))})
+    return out
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _coerce_source_docs(field, value):
+    """证据链字段:每条规则依据的原始凭证列表。
+
+    每项 {doc, art_code?, sha256?, note?}:doc=凭证标签(如 'FY2025年报全文'),
+    art_code=东财公告 art_code(回溯下载键),sha256=该 PDF 的 64 位十六进制内容哈希
+    (留空可),note=从中抽取了什么。至少要有 doc 或 art_code 之一(不允许无出处条目)。
+    sha256 给定时必须是合法 64 位 hex(防写入垃圾哈希)。
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValidationError(f"{field} 必须是数组 [{{doc, art_code?, sha256?, note?}}]")
+    out = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValidationError(f"{field}[{i}] 必须是对象 {{doc, art_code?, sha256?, note?}}")
+        doc = str(item.get("doc", "")).strip()
+        art = str(item.get("art_code", "")).strip()
+        if not doc and not art:
+            raise ValidationError(f"{field}[{i}] 需含 doc 或 art_code(至少一个出处标识)")
+        sha = item.get("sha256")
+        if sha is not None and str(sha).strip() != "":
+            sha = str(sha).strip().lower()
+            if not _SHA256_RE.match(sha):
+                raise ValidationError(f"{field}[{i}].sha256 必须是 64 位十六进制(或留空)")
+        else:
+            sha = ""
+        out.append({"doc": doc, "art_code": art, "sha256": sha,
                     "note": str(item.get("note", ""))})
     return out
 

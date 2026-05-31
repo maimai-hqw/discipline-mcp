@@ -70,7 +70,7 @@ def _fmt_rule(rule: dict) -> str:
         "normalized_eps", "normalized_basis", "earnings_quality",
         "value_trap", "cheap_reason", "dividend_yield", "dividend_sustainable",
         "catalysts", "tracking_metrics",
-        "confidence", "disagreement", "evidence", "vs_portfolio",
+        "confidence", "disagreement", "evidence", "vs_portfolio", "source_docs",
         "locked_fields", "updated_at",
     ]
     lines = []
