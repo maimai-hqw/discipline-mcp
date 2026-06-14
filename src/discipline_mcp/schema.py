@@ -72,6 +72,25 @@ ENUM_VALUES = {
     "confidence": {"LOW", "MED", "HIGH"},
 }
 
+# Canonical field display order, shared by the get_rules tool output and the
+# read-only web viewer so the two never drift. Includes the replay-managed keys
+# (symbol/locked_fields/updated_at) that each consumer may render specially.
+DISPLAY_ORDER = [
+    "symbol", "name", "sector", "status", "rationale",
+    "intrinsic_low", "intrinsic_high", "graham_number",
+    "add_zone_high", "add_tranches", "no_chase_above",
+    "trim_zone_low", "trim_tranches", "stop_loss", "clear_line",
+    "hard_triggers", "target_position_pct", "max_position_pct",
+    # --- value-investing deep-dive informational fields ---
+    "stock_type", "moat", "moat_rating",
+    "normalized_eps", "normalized_basis", "earnings_quality",
+    "value_trap", "cheap_reason", "dividend_yield", "dividend_sustainable",
+    "catalysts", "tracking_metrics",
+    "confidence", "disagreement", "evidence", "vs_portfolio", "source_docs",
+    "locked_fields", "updated_at",
+]
+
+
 class ValidationError(ValueError):
     """Raised when a write violates a hard rule."""
 

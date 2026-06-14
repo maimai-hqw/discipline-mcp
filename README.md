@@ -39,6 +39,23 @@ Write (confirm-gated): `set_rule`, `set_rule_bulk`, `lock_rule`, `unlock_rule`,
 It does NOT store prices/holdings — combine with the `ashare` (quotes/financials)
 and `portfolio` (positions/cost) MCP servers at the conversation layer.
 
+## Web viewer (read-only)
+A clean, browser-based view of the whole ledger boots automatically with the
+MCP server (a daemon thread) and serves on **`http://127.0.0.1:8765`** — open it
+in a browser while the MCP is running. It shows a sortable/filterable overview
+of every symbol; click a row to expand the full deep-dive plus that symbol's
+change history, and a header badge reports hash-chain integrity (a broken chain
+renders a tamper banner instead of data).
+
+It is strictly **read-only** — there is no write path in the web layer, so all
+edits still go through the confirm-gated tools above. It binds loopback only
+(`127.0.0.1`), GET only, and HTML-escapes every value.
+
+| env | default | meaning |
+|---|---|---|
+| `DISCIPLINE_MCP_WEB` | on | set to `0`/`false`/`no`/`off` to disable the viewer (e.g. headless/cron MCP runs) |
+| `DISCIPLINE_MCP_WEB_PORT` | `8765` | port to bind on `127.0.0.1` |
+
 ## Value-investing deep-dive fields
 Informational, additive fields (no new hard rules, none locked by default). Set
 them via the same `set_rule` / `set_rule_bulk` tools.
