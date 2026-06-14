@@ -26,7 +26,7 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
-from . import store, schema
+from . import store, schema, web
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,22 +59,8 @@ def _change_blocked(rule, field):
 
 
 def _fmt_rule(rule: dict) -> str:
-    keys_order = [
-        "symbol", "name", "sector", "status", "rationale",
-        "intrinsic_low", "intrinsic_high", "graham_number",
-        "add_zone_high", "add_tranches", "no_chase_above",
-        "trim_zone_low", "trim_tranches", "stop_loss", "clear_line",
-        "hard_triggers", "target_position_pct", "max_position_pct",
-        # --- value-investing deep-dive informational fields ---
-        "stock_type", "moat", "moat_rating",
-        "normalized_eps", "normalized_basis", "earnings_quality",
-        "value_trap", "cheap_reason", "dividend_yield", "dividend_sustainable",
-        "catalysts", "tracking_metrics",
-        "confidence", "disagreement", "evidence", "vs_portfolio", "source_docs",
-        "locked_fields", "updated_at",
-    ]
     lines = []
-    for k in keys_order:
+    for k in schema.DISPLAY_ORDER:
         if k in rule and rule[k] not in (None, [], ""):
             lines.append(f"  {k}: {rule[k]}")
     return "\n".join(lines)
@@ -425,6 +411,7 @@ def main() -> None:
     if store.fcntl is None:  # non-POSIX: no cross-process file lock
         logger.warning("fcntl 不可用(非 POSIX 平台):跨进程文件锁未启用,"
                        "请勿多实例并发写同一账本(单实例使用不受影响)。")
+    web.start_web_server()  # best-effort read-only viewer; never blocks the MCP
     mcp.run()
 
 
