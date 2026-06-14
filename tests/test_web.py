@@ -93,6 +93,62 @@ def test_disabled_start_returns_none(monkeypatch):
 
 
 # ----- integration: a real loopback server ---------------------------------
+def _serve(db):
+    httpd = web.make_httpd("127.0.0.1", 0, str(db))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, httpd.server_address[1]
+
+
+def test_corrupt_ledger_renders_tamper_banner_not_500(db):
+    _seed(db)
+    with open(db, "a", encoding="utf-8") as fh:
+        fh.write("this is not json\n")   # read_events() raises ChainError early
+    httpd, port = _serve(db)
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/")
+        r = conn.getresponse(); body = r.read().decode("utf-8")
+        assert r.status == 200            # not a bare 500
+        assert "账本校验失败" in body
+        conn.close()
+    finally:
+        httpd.shutdown(); httpd.server_close()
+
+
+def test_malformed_content_length_on_write_method(db):
+    _seed(db)
+    httpd, port = _serve(db)
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest("POST", "/", skip_accept_encoding=True)
+        conn.putheader("Content-Length", "nope")  # malformed
+        conn.endheaders()
+        r = conn.getresponse(); r.read()
+        assert r.status == 405            # clean rejection, thread survived
+        conn.close()
+    finally:
+        httpd.shutdown(); httpd.server_close()
+
+
+def test_get_with_body_does_not_desync_keepalive(db):
+    _seed(db)
+    httpd, port = _serve(db)
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest("GET", "/", skip_accept_encoding=True)
+        conn.putheader("Content-Length", "4")
+        conn.endheaders()
+        conn.send(b"junk")               # body the server must drain
+        r = conn.getresponse(); r.read()
+        assert r.status == 200
+        conn.request("GET", "/")         # same connection must stay framed
+        r2 = conn.getresponse(); b2 = r2.read().decode("utf-8")
+        assert r2.status == 200 and "sh.600483" in b2
+        conn.close()
+    finally:
+        httpd.shutdown(); httpd.server_close()
+
+
 def test_server_routes_and_methods(db):
     _seed(db)
     httpd = web.make_httpd("127.0.0.1", 0, str(db))

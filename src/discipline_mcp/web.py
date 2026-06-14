@@ -279,7 +279,7 @@ def _row(sym, rule, history) -> str:
     status = rule.get("status") or "WATCH"
     lo, hi = _num(rule, "intrinsic_low"), _num(rule, "intrinsic_high")
     if lo is not None and hi is not None:
-        intr = f"{lo:g}–{hi:g}"
+        intr = f"{lo:g} – {hi:g}"  # thin spaces so the range breathes
     elif lo is not None:
         intr = f"≥{lo:g}"
     elif hi is not None:
@@ -293,6 +293,7 @@ def _row(sym, rule, history) -> str:
     moat = rule.get("moat_rating") or ""
     conf = rule.get("confidence") or ""
     upd = rule.get("updated_at") or ""
+    upd_date = upd[:10]  # date only in the table; full value on hover (title)
     search = " ".join([sym, name, sector]).lower()
 
     data = ('data-symbol="%s" data-search="%s" data-status="%s" '
@@ -316,10 +317,13 @@ def _row(sym, rule, history) -> str:
         '<td class="num">%s</td>' % ("—" if tgt is None else f"{tgt:g}%"),
         '<td>%s</td>' % (_esc(moat) if moat else dash),
         '<td>%s</td>' % (_esc(conf) if conf else dash),
-        '<td class="muted nowrap mono">%s</td>' % _esc(upd),
+        '<td class="muted nowrap mono" title="%s">%s</td>'
+        % (_esc(upd), _esc(upd_date)),
     ]
     retired = " retired" if status == "RETIRED" else ""
-    return ('<tbody class="sym%s" %s><tr class="main">%s</tr>'
+    return ('<tbody class="sym%s" %s>'
+            '<tr class="main" tabindex="0" role="button" aria-expanded="false">'
+            '%s</tr>'
             '<tr class="detail-row"><td colspan="11">%s</td></tr></tbody>'
             % (retired, data, "".join(cells), _detail(rule, history)))
 
@@ -342,10 +346,9 @@ def _overview_html(state, events, db_path) -> str:
         '<h1>纪律账本<span class="en">Discipline Ledger</span></h1>'
         '<div class="subtitle mono">%s</div></div>'
         '<div class="meta">'
-        '<span>%d 标的 · %d 事件</span>'
         '<span class="badge chain-ok">● 链完整 · %s</span>'
-        '<span class="muted">%s</span>'
-        '</div></header>' % (dbp, n_sym, n_ev, head12, gen)
+        '<span class="muted">%d 标的 · %d 事件 · %s</span>'
+        '</div></header>' % (dbp, head12, n_sym, n_ev, gen)
     )
     if not state:
         return (header + '<div class="empty">账本为空 · 用 set_rule / '
@@ -430,8 +433,20 @@ class _Handler(BaseHTTPRequestHandler):
         logger.info("web %s %s", self.address_string(), fmt % args)
 
     def _drain(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        if n:
+        """Consume any request body so the next keep-alive request stays framed.
+        Chunked bodies can't be drained safely here -> close the connection."""
+        if self.headers.get("Transfer-Encoding"):
+            self.close_connection = True
+            return
+        raw = self.headers.get("Content-Length")
+        if not raw:
+            return
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            self.close_connection = True  # malformed length -> can't trust framing
+            return
+        if n > 0:
             self.rfile.read(n)
 
     def _send(self, code, body, ctype="text/html; charset=utf-8"):
@@ -445,6 +460,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        self._drain()  # a GET may carry a body; keep the connection framed
         path = self.path.split("?", 1)[0]
         if path != "/":
             self._send(404, _document('<div class="empty">404 · 未找到</div>'))
@@ -453,6 +469,8 @@ class _Handler(BaseHTTPRequestHandler):
             db = getattr(self.server, "db_path", None)
             events = store.read_events(db)
             self._send(200, render_page(events, db))
+        except store.ChainError as e:  # corrupt/tampered ledger -> banner, not 500
+            self._send(200, _document(_tamper_html(e)))
         except Exception as e:  # never let the request thread die
             logger.exception("web render failed")
             self._send(500, _document(
@@ -492,7 +510,8 @@ def start_web_server():
         return None
     threading.Thread(target=httpd.serve_forever, name="discipline-web",
                      daemon=True).start()
-    logger.info("web viewer on http://%s:%s (read-only)", HOST, port)
+    actual_port = httpd.server_address[1]  # resolves port 0 to the real bind
+    logger.info("web viewer on http://%s:%s (read-only)", HOST, actual_port)
     return httpd
 
 
@@ -502,15 +521,15 @@ def start_web_server():
 _CSS = """
 :root{
   --bg:#fbfbfa; --panel:#fff; --ink:#18181b; --muted:#71717a;
-  --line:#ededee; --line-strong:#e2e2e4; --accent:#0f766e; --accent-soft:#0f766e14;
-  --hover:#0000000a; --shadow:0 1px 2px #0000000a,0 10px 30px #0000000a;
+  --line:#ececed; --line-strong:#dadadd; --accent:#0f766e; --accent-soft:#0f766e14;
+  --hover:#0000000a; --shadow:0 1px 2px #0000000a,0 4px 12px #00000008;
   --radius:14px;
   --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#0a0a0b; --panel:#141416; --ink:#ededed; --muted:#8e8e98;
-  --line:#212124; --line-strong:#2b2b30; --accent:#2dd4bf; --accent-soft:#2dd4bf18;
-  --hover:#ffffff08; --shadow:0 1px 2px #0006,0 14px 36px #0007;
+  --line:#212124; --line-strong:#34343a; --accent:#2dd4bf; --accent-soft:#2dd4bf18;
+  --hover:#ffffff08; --shadow:0 1px 2px #0005,0 4px 14px #0006;
 }}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -529,27 +548,28 @@ h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.012em;
   display:flex;align-items:baseline}
 h1 .en{font-weight:400;font-size:12px;letter-spacing:.04em;color:var(--muted);
   margin-left:10px;text-transform:uppercase}
-.subtitle{margin-top:7px;font-size:12px;color:var(--muted);word-break:break-all}
+.subtitle{margin-top:7px;font-size:11px;color:var(--muted);opacity:.75;
+  word-break:break-all}
 .meta{display:flex;flex-direction:column;align-items:flex-end;gap:7px;
-  font-size:12px;color:var(--muted)}
+  font-size:11.5px;color:var(--muted)}
 
 .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;
   border-radius:999px;font-size:11.5px;font-weight:500;line-height:1.4;
   font-variant-numeric:tabular-nums}
 .chain-ok{color:var(--accent);background:var(--accent-soft)}
 .st-HOLD{color:#0f766e;background:#0f766e14}
-.st-BUILDING{color:#1d4ed8;background:#1d4ed814}
-.st-TRIMMING{color:#b45309;background:#b4530914}
-.st-EXITING{color:#c2410c;background:#c2410c14}
-.st-WATCH{color:#6b7280;background:#6b728014}
-.st-RETIRED{color:#9ca3af;background:#9ca3af14}
+.st-BUILDING{color:#15803d;background:#15803d12}
+.st-TRIMMING{color:#a16207;background:#a1620712}
+.st-EXITING{color:#b91c1c;background:#b91c1c10}
+.st-WATCH{color:#6b7280;background:#6b728012}
+.st-RETIRED{color:#52525b;background:#52525b12}
 @media (prefers-color-scheme:dark){
   .st-HOLD{color:#2dd4bf;background:#2dd4bf18}
-  .st-BUILDING{color:#7aa2ff;background:#7aa2ff18}
-  .st-TRIMMING{color:#e0a85a;background:#e0a85a18}
-  .st-EXITING{color:#f0915e;background:#f0915e18}
+  .st-BUILDING{color:#4ade80;background:#4ade8018}
+  .st-TRIMMING{color:#d9a441;background:#d9a44118}
+  .st-EXITING{color:#f0715e;background:#f0715e18}
   .st-WATCH{color:#9aa0aa;background:#9aa0aa18}
-  .st-RETIRED{color:#7c7c85;background:#7c7c8518}
+  .st-RETIRED{color:#9aa0aa;background:#9aa0aa14}
 }
 
 .controls{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -562,7 +582,8 @@ h1 .en{font-weight:400;font-size:12px;letter-spacing:.04em;color:var(--muted);
 .filter::placeholder{color:var(--muted)}
 #count{margin-left:auto;font-size:12px}
 
-table#rules{width:100%;border-collapse:collapse;font-size:13px}
+table#rules{width:100%;border-collapse:collapse;font-size:13px;
+  font-variant-numeric:tabular-nums}
 table#rules thead th{position:sticky;top:0;z-index:1;background:var(--bg);
   text-align:left;font-weight:500;color:var(--muted);font-size:11px;
   letter-spacing:.05em;text-transform:uppercase;padding:0 14px 11px;
@@ -574,11 +595,16 @@ th.sorted-desc::after{content:" ↓";color:var(--accent)}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 td.num{font-family:var(--mono);font-size:12.5px}
 
-tbody.sym>tr.main>td{padding:13px 14px;border-bottom:1px solid var(--line);
+tbody.sym>tr.main>td{padding:15px 14px;border-bottom:1px solid var(--line);
   vertical-align:middle}
 tbody.sym>tr.main{cursor:pointer;transition:background .12s}
 tbody.sym:hover>tr.main>td{background:var(--hover)}
-tbody.sym.open>tr.main>td{background:var(--hover);border-bottom-color:transparent}
+tbody.sym>tr.main:focus-visible{outline:none}
+tbody.sym>tr.main:focus-visible>td{background:var(--hover)}
+tbody.sym>tr.main:focus-visible>td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
+tbody.sym.open>tr.main>td{background:var(--accent-soft);border-bottom-color:transparent}
+tbody.sym.open>tr.main>td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
+tbody.sym.open>tr.detail-row>td{box-shadow:inset 2px 0 0 var(--accent)}
 td.sym{font-family:var(--mono);font-size:12.5px;letter-spacing:-.01em}
 tbody.sym.retired td.sym{text-decoration:line-through;color:var(--muted)}
 
@@ -591,20 +617,22 @@ tr.detail-row>td{padding:2px 14px 20px}
 .grp{margin-bottom:22px}
 .grp:last-child{margin-bottom:0}
 .grp>h3{margin:0 0 13px;padding-bottom:9px;font-size:11px;font-weight:600;
-  letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+  letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
   border-bottom:1px solid var(--line)}
 dl.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);
-  gap:9px 26px;margin:0;align-items:baseline}
-dl.kv dt{color:var(--muted);font-size:12.5px}
-dl.kv dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.subblock{margin-top:14px}
-.subblock>h4{margin:0 0 6px;font-size:12px;font-weight:500;color:var(--muted)}
+  gap:14px 28px;margin:0;align-items:baseline}
+dl.kv dt{color:var(--muted);font-size:11px;letter-spacing:.04em;font-weight:500;
+  padding-top:1px}
+dl.kv dd{margin:0;line-height:1.6;font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere}
+.subblock{margin-top:18px}
+.subblock>h4{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted)}
 
 table.mini{width:100%;border-collapse:collapse;font-size:12.5px}
-table.mini th{text-align:left;font-weight:500;color:var(--muted);font-size:10.5px;
-  text-transform:uppercase;letter-spacing:.04em;padding:5px 11px;
-  border-bottom:1px solid var(--line)}
-table.mini td{padding:6px 11px;border-bottom:1px solid var(--line);
+table.mini th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;
+  letter-spacing:.02em;padding:6px 11px;border-bottom:1px solid var(--line)}
+table.mini td{padding:7px 11px;border-bottom:1px solid var(--line);
   overflow-wrap:anywhere;vertical-align:top}
 table.mini tbody tr:last-child td{border-bottom:none}
 table.mini.hist td:first-child,table.mini.hist td:nth-child(2){white-space:nowrap}
@@ -647,10 +675,20 @@ _JS = """
   if(f)f.addEventListener('input',apply);
   if(sf)sf.addEventListener('change',apply);
   apply();
+  function toggle(tr){
+    var open=tr.parentNode.classList.toggle('open');
+    tr.setAttribute('aria-expanded',open?'true':'false');
+  }
   tbl.addEventListener('click',function(e){
     var tr=e.target.closest&&e.target.closest('tr.main');
+    if(tr)toggle(tr);
+  });
+  tbl.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    var tr=e.target.closest&&e.target.closest('tr.main');
     if(!tr)return;
-    tr.parentNode.classList.toggle('open');
+    e.preventDefault();
+    toggle(tr);
   });
   var ths=Array.prototype.slice.call(tbl.querySelectorAll('th[data-key]'));
   var cur={key:null,dir:1};
